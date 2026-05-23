@@ -136,12 +136,13 @@ async def _collect_otx(url: str, limit: int = 200) -> list[dict]:
             ioc_type = detect_type(value)
             if not ioc_type:
                 continue
+            refs = pulse.get("references", [])
             rows.append({
                 "ioc_value": normalize(value),
                 "ioc_type": ioc_type.value,
                 "threat_type": pulse.get("name"),
                 "tags": pulse.get("tags", []),
-                "source_url": pulse.get("references", [None])[0],
+                "source_url": refs[0] if refs else None,
                 "raw": pulse,
             })
     return rows[:limit]

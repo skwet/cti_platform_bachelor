@@ -33,5 +33,5 @@ ui.run(
     port=8000,
     title=settings.APP_TITLE,
     dark=True,
-    reload=False,
+    reload=True,
 )

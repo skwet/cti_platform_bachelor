@@ -93,7 +93,7 @@ def layout(title: str, active: str = "/"):
     with ui.row().style("gap:0; width:100%; min-height:100vh"):
         # Sidebar
         with ui.element("nav").classes("sidebar"):
-            ui.label("🛡️ CTI Platform").style(
+            ui.label("IoCortex").style(
                 f"font-size:1rem; font-weight:700; color:{TEXT}; padding:4px 8px 20px"
             )
             for icon, label, path in NAV:
