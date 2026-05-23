@@ -7,6 +7,7 @@ import io
 import logging
 from datetime import datetime, timezone
 
+import feedparser
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
