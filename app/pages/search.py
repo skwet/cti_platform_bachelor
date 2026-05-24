@@ -1,15 +1,11 @@
-"""
-Сторінка пошуку та аналізу IoC.
-"""
+"""Сторінка пошуку та аналізу IoC."""
 from datetime import datetime, timezone
 from nicegui import ui
-
 from app.core.detector import detect_type, normalize
 from app.core.database import AsyncSessionLocal
 from app.models.ioc import IoC, SearchLog, Severity
 from app.services.enrichment import enrich
 from app.pages import theme
-
 
 async def _do_search(value: str, container) -> None:
     val = normalize(value)
@@ -22,9 +18,7 @@ async def _do_search(value: str, container) -> None:
 
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
-        existing = (await db.execute(
-            select(IoC).where(IoC.value == val)
-        )).scalar_one_or_none()
+        existing = (await db.execute(select(IoC).where(IoC.value == val))).scalar_one_or_none()
 
         if existing:
             existing.risk_score   = data["risk_score"]
@@ -78,23 +72,20 @@ async def _do_search(value: str, container) -> None:
     with container:
         _render_result(ioc, data)
 
-
 def _row(label: str, value: str):
-    """Проста пара ключ–значення."""
     with ui.row().style("gap:8px; align-items:baseline; margin-bottom:4px"):
         ui.label(label).style(f"font-size:0.75rem; color:{theme.MUTED}; min-width:120px")
         ui.html(str(value) if value else "—").style("font-size:0.88rem")
-
 
 def _render_result(ioc: dict, data: dict):
     score = ioc["risk_score"]
     color = theme.risk_color(score)
     mitre = data.get("mitre_ttps", [])
+    uh = data.get("urlhaus")
 
     # ── Заголовок результату ──────────────────────────────────────────────────
     with ui.element("div").classes("card"):
         with ui.row().style("gap:16px; align-items:center; flex-wrap:wrap"):
-            # Круг з score
             ui.html(
                 f'<div style="width:72px;height:72px;border-radius:50%;border:3px solid {color};'
                 f'display:flex;align-items:center;justify-content:center;'
@@ -109,18 +100,17 @@ def _render_result(ioc: dict, data: dict):
                         ui.html('<span class="badge badge-critical">✕ Шкідливий</span>')
                     elif ioc["is_malicious"] is False:
                         ui.html('<span class="badge badge-low">✓ Чистий</span>')
-                ui.label(ioc["value"]).style(
-                    f"font-family:monospace; font-size:0.95rem; color:{theme.TEXT}; word-break:break-all"
-                )
+                ui.label(ioc["value"]).style(f"font-family:monospace; font-size:0.95rem; color:{theme.TEXT}; word-break:break-all")
 
-    # ── Вкладки ───────────────────────────────────────────────────────────────
+    # ── Вкладки меню ──────────────────────────────────────────────────────────
     with ui.tabs().style(f"color:{theme.MUTED}; margin-bottom:16px") as tabs:
-        t_info   = ui.tab("info",    label="Огляд",       icon="info")
-        t_vt     = ui.tab("vt",      label="VirusTotal",  icon="bug_report")
-        t_abuse  = ui.tab("abuse",   label="AbuseIPDB",   icon="warning")
-        t_otx    = ui.tab("otx",     label="OTX",         icon="rss_feed")
-        t_mitre  = ui.tab("mitre",   label="MITRE",       icon="security")
-        t_shodan = ui.tab("shodan",  label="Shodan",      icon="dns")
+        t_info   = ui.tab("info",   label="Огляд",       icon="info")
+        t_vt     = ui.tab("vt",     label="VirusTotal",  icon="bug_report")
+        t_abuse  = ui.tab("abuse",  label="AbuseIPDB",   icon="warning")
+        t_urlhaus = ui.tab("urlhaus", label="URLhaus",     icon="link")
+        t_otx    = ui.tab("otx",    label="OTX",         icon="rss_feed")
+        t_mitre  = ui.tab("mitre",  label="MITRE",       icon="security")
+        t_shodan = ui.tab("shodan", label="Shodan",      icon="dns")
 
     with ui.tab_panels(tabs, value="info").style("background:transparent"):
 
@@ -130,10 +120,7 @@ def _render_result(ioc: dict, data: dict):
                 _row("Тип",           theme.type_badge(ioc["ioc_type"]))
                 _row("Risk Score",    f'<span style="color:{color};font-weight:700">{score}/100</span>')
                 _row("Severity",      theme.sev_badge(ioc["severity"]))
-                _row("Шкідливий",
-                     '<span style="color:#ef4444">Так</span>' if ioc["is_malicious"] is True
-                     else '<span style="color:#10b981">Ні</span>' if ioc["is_malicious"] is False
-                     else "—")
+                _row("Шкідливий",     '<span style="color:#ef4444">Так</span>' if ioc["is_malicious"] is True else '<span style="color:#10b981">Ні</span>' if ioc["is_malicious"] is False else "—")
                 _row("Країна",        ioc["country"])
                 _row("Джерело",       ioc["source"])
                 _row("Перший запит",  ioc["first_seen"])
@@ -148,6 +135,7 @@ def _render_result(ioc: dict, data: dict):
                 ui.separator().style("margin:12px 0")
                 if vt:  _row("VirusTotal",  f'{vt["malicious"]} виявлень')
                 if ab:  _row("AbuseIPDB",   f'Score: {ab["abuse_score"]}%')
+                if uh and uh.get("found"): _row("URLhaus", f'{uh["url_count"]} шкідливих лінків ({uh["urls_online"]} онлайн)')
                 if otx: _row("OTX Pulses",  f'{otx["pulse_count"]} pulses')
                 if sh:  _row("Shodan",      f'{sh["open_ports_count"]} відкритих портів')
                 if mitre: _row("MITRE TTP", f'{len(mitre)} технік')
@@ -167,9 +155,7 @@ def _render_result(ioc: dict, data: dict):
                             ("Не виявлено", vt.get("undetected", 0), theme.MUTED),
                         ]:
                             with ui.element("div").style("text-align:center"):
-                                ui.label(str(val_)).style(
-                                    f"font-size:1.8rem; font-weight:700; color:{col_}"
-                                )
+                                ui.label(str(val_)).style(f"font-size:1.8rem; font-weight:700; color:{col_}")
                                 ui.label(label).style(f"font-size:0.8rem; color:{theme.MUTED}")
                     ui.separator().style("margin:8px 0")
                     _row("Репутація",  str(vt.get("reputation", "—")))
@@ -194,19 +180,41 @@ def _render_result(ioc: dict, data: dict):
 
                 if ab.get("reports"):
                     with ui.element("div").classes("card"):
-                        ui.label("Останні звіти").style(
-                            f"font-weight:600; margin-bottom:8px; display:block"
-                        )
+                        ui.label("Останні звіти").style(f"font-weight:600; margin-bottom:8px; display:block")
                         cols = [
                             {"name": "reported_at", "label": "Дата",      "field": "reported_at", "align": "left"},
                             {"name": "categories",  "label": "Категорії", "field": "categories",  "align": "left"},
                             {"name": "comment",     "label": "Коментар",  "field": "comment",     "align": "left"},
                         ]
-                        rows = [
-                            {**r, "categories": ", ".join(str(c) for c in r.get("categories", []))}
-                            for r in ab["reports"]
-                        ]
+                        rows = [{**r, "categories": ", ".join(str(c) for c in r.get("categories", []))} for r in ab["reports"]]
                         ui.table(columns=cols, rows=rows, row_key="reported_at").classes("w-full")
+
+        # ── URLhaus ───────────────────────────────────────────────────────────
+        with ui.tab_panel("urlhaus"):
+            if not uh:
+                ui.label("Джерело URLhaus відключено або недоступне").style(f"color:{theme.MUTED}")
+            elif not uh.get("found"):
+                ui.label("Записів в базі даних URLhaus не знайдено").style(f"color:{theme.SUCCESS}")
+            else:
+                with ui.element("div").classes("card"):
+                    _row("Статус", '<span style="color:#ef4444;font-weight:bold">Знайдено в чорному списку</span>')
+                    _row("Всього шкідливих URL", str(uh.get("url_count", 0)))
+                    _row("Активних лінків (Online)", f'<span style="color:#ef4444">{uh.get("urls_online", 0)}</span>')
+                    _row("Загроза / Малварь", f'<span class="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{uh.get("threat") or "—"}</span>')
+                    _row("Додано в базу", uh.get("date_added") or "—")
+                    if uh.get("tags"):
+                        _row("Теги", ", ".join(uh["tags"]))
+
+                if uh.get("recent_urls"):
+                    with ui.element("div").classes("card"):
+                        ui.label("Останні шкідливі URL").classes("font-semibold mb-2 text-white")
+                        uh_cols = [
+                            {"name": "url", "label": "URL локейшн", "field": "url", "align": "left"},
+                            {"name": "status", "label": "Статус", "field": "status", "align": "center"},
+                            {"name": "threat", "label": "Тип загрози", "field": "threat", "align": "left"},
+                            {"name": "date_added", "label": "Дата реєстрації", "field": "date_added", "align": "left"},
+                        ]
+                        ui.table(columns=uh_cols, rows=uh["recent_urls"], row_key="url").classes("w-full")
 
         # ── OTX ───────────────────────────────────────────────────────────────
         with ui.tab_panel("otx"):
@@ -223,51 +231,31 @@ def _render_result(ioc: dict, data: dict):
                     _row("ASN",                 otx.get("asn") or "—")
 
                 for pulse in otx.get("pulses", []):
-                    with ui.element("div").style(
-                        f"border-left:3px solid {theme.PRIMARY}; padding:10px 14px; "
-                        f"margin-bottom:8px; background:rgba(59,130,246,0.05); border-radius:0 6px 6px 0"
-                    ):
+                    with ui.element("div").style(f"border-left:3px solid {theme.PRIMARY}; padding:10px 14px; margin-bottom:8px; background:rgba(59,130,246,0.05); border-radius:0 6px 6px 0"):
                         ui.label(pulse.get("name") or "—").style("font-weight:600; font-size:0.9rem")
                         if pulse.get("description"):
-                            ui.label(pulse["description"]).style(
-                                f"font-size:0.78rem; color:{theme.MUTED}; margin-top:4px"
-                            )
+                            ui.label(pulse["description"]).style(f"font-size:0.78rem; color:{theme.MUTED}; margin-top:4px")
                         if pulse.get("tags"):
                             with ui.row().style("gap:4px; flex-wrap:wrap; margin-top:6px"):
                                 for tag in pulse["tags"][:8]:
-                                    ui.html(
-                                        f'<span style="font-size:0.72rem;padding:1px 6px;'
-                                        f'background:rgba(59,130,246,0.1);color:{theme.PRIMARY};'
-                                        f'border:1px solid rgba(59,130,246,0.2);border-radius:3px">{tag}</span>'
-                                    )
+                                    ui.html(f'<span style="font-size:0.72rem;padding:1px 6px;background:rgba(59,130,246,0.1);color:{theme.PRIMARY};border:1px solid rgba(59,130,246,0.2);border-radius:3px">{tag}</span>')
 
         # ── MITRE ATT&CK ──────────────────────────────────────────────────────
         with ui.tab_panel("mitre"):
             if not mitre:
                 ui.label("Технік MITRE ATT&CK не знайдено для цього IoC").style(f"color:{theme.MUTED}")
             else:
-                ui.label(f"Знайдено {len(mitre)} технік (джерело: OTX)").style(
-                    f"color:{theme.MUTED}; font-size:0.85rem; margin-bottom:12px; display:block"
-                )
+                ui.label(f"Знайдено {len(mitre)} технік (джерело: OTX)").style(f"color:{theme.MUTED}; font-size:0.85rem; margin-bottom:12px; display:block")
                 for t in mitre:
                     tid  = t.get("id", "")
                     name = t.get("name") or tid
                     url  = t.get("url", f"https://attack.mitre.org/techniques/{tid.replace('.', '/')}")
                     is_sub = t.get("subtechnique", False)
                     color_chip = "#a78bfa" if is_sub else theme.PRIMARY
-                    with ui.row().style(
-                        f"gap:12px; align-items:center; padding:8px 12px; margin-bottom:6px; "
-                        f"background:rgba(59,130,246,0.05); border-radius:6px; "
-                        f"border:1px solid rgba(59,130,246,0.15)"
-                    ):
-                        ui.label(tid).style(
-                            f"font-family:monospace; font-weight:700; color:{color_chip}; min-width:80px"
-                        )
+                    with ui.row().style(f"gap:12px; align-items:center; padding:8px 12px; margin-bottom:6px; background:rgba(59,130,246,0.05); border-radius:6px; border:1px solid rgba(59,130,246,0.15)"):
+                        ui.label(tid).style(f"font-family:monospace; font-weight:700; color:{color_chip}; min-width:80px")
                         ui.label(name).style(f"color:{theme.TEXT}; font-size:0.88rem; flex:1")
-                        ui.html(
-                            f'<a href="{url}" target="_blank" style="font-size:0.78rem; '
-                            f'color:{theme.MUTED}; text-decoration:none">↗ MITRE</a>'
-                        )
+                        ui.html(f'<a href="{url}" target="_blank" style="font-size:0.78rem; color:{theme.MUTED}; text-decoration:none">↗ MITRE</a>')
 
         # ── Shodan ────────────────────────────────────────────────────────────
         with ui.tab_panel("shodan"):
@@ -288,26 +276,16 @@ def _render_result(ioc: dict, data: dict):
                     with ui.row().style("gap:6px; flex-wrap:wrap; margin-top:8px"):
                         ui.label("Порти:").style(f"color:{theme.MUTED}; font-size:0.8rem; align-self:center")
                         for p in sh["ports"]:
-                            ui.html(
-                                f'<span style="font-size:0.75rem;padding:2px 6px;'
-                                f'background:rgba(59,130,246,0.1);color:{theme.PRIMARY};'
-                                f'border-radius:4px">{p}</span>'
-                            )
+                            ui.html(f'<span style="font-size:0.75rem;padding:2px 6px;background:rgba(59,130,246,0.1);color:{theme.PRIMARY};border-radius:4px">{p}</span>')
 
                 if sh.get("vulnerabilities"):
                     with ui.row().style("gap:6px; flex-wrap:wrap; margin-top:8px"):
                         ui.label("CVE:").style(f"color:{theme.MUTED}; font-size:0.8rem; align-self:center")
                         for v in sh["vulnerabilities"]:
-                            ui.html(
-                                f'<span style="font-size:0.75rem;padding:2px 6px;'
-                                f'background:rgba(239,68,68,0.1);color:{theme.DANGER};'
-                                f'border-radius:4px">{v}</span>'
-                            )
+                            ui.html(f'<span style="font-size:0.75rem;padding:2px 6px;background:rgba(239,68,68,0.1);color:{theme.DANGER};border-radius:4px">{v}</span>')
 
                 if sh.get("services"):
-                    ui.label("Сервіси").style(
-                        f"font-weight:600; margin:12px 0 8px; display:block"
-                    )
+                    ui.label("Сервіси").style(f"font-weight:600; margin:12px 0 8px; display:block")
                     cols = [
                         {"name": "port",      "label": "Порт",     "field": "port",      "align": "left"},
                         {"name": "transport", "label": "Протокол", "field": "transport", "align": "left"},
@@ -316,23 +294,16 @@ def _render_result(ioc: dict, data: dict):
                     ]
                     ui.table(columns=cols, rows=sh["services"], row_key="port").classes("w-full")
 
-
 def page():
     @ui.page("/search")
     async def search():
         with theme.layout("Аналіз IoC", "/search"):
-
             with ui.element("div").classes("card").style("text-align:center; margin-bottom:16px"):
-                ui.label("Репутаційний аналіз загроз").style(
-                    "font-size:1.1rem; font-weight:700; margin-bottom:8px; display:block"
-                )
-                ui.label("Введіть IP, домен, URL, MD5/SHA1/SHA256 або email").style(
-                    f"color:{theme.MUTED}; font-size:0.88rem; margin-bottom:16px; display:block"
-                )
+                ui.label("Репутаційний аналіз загроз").style("font-size:1.1rem; font-weight:700; margin-bottom:8px; display:block")
+                ui.label("Введіть IP, домен, URL, MD5/SHA1/SHA256 або email").style(f"color:{theme.MUTED}; font-size:0.88rem; margin-bottom:16px; display:block")
+                
                 with ui.row().style("justify-content:center; gap:8px"):
-                    q_input = ui.input(
-                        placeholder="8.8.8.8 / evil.com / https://... / d41d8cd98f00b204..."
-                    ).props("outlined dense dark").style("width:500px; font-family:monospace")
+                    q_input = ui.input(placeholder="8.8.8.8 / evil.com / https://... / d41d8cd98f00b204...").props("outlined dense dark").style("width:500px; font-family:monospace")
 
                     async def on_search():
                         q = q_input.value.strip()
@@ -343,8 +314,6 @@ def page():
                         btn.props(remove="loading")
 
                     q_input.on("keydown.enter", on_search)
-                    btn = ui.button("Аналізувати", icon="search", on_click=on_search).props(
-                        "color=primary unelevated"
-                    )
+                    btn = ui.button("Аналізувати", icon="search", on_click=on_search).props("color=primary unelevated")
 
             result_area = ui.element("div").style("width:100%")
