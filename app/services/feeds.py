@@ -150,7 +150,7 @@ async def _collect_otx(url: str, limit: int = 200) -> list[dict]:
 async def _collect_malwarebazaar(url: str, limit: int = 150) -> list[dict]:
     payload = {
         "query": "get_recent",
-        "selector": str(min(limit, 100)),  # API max = 100
+        "selector": str(min(limit, 100)),
     }
 
     headers = {}

@@ -181,7 +181,6 @@ async def _otx(value: str, ioc_type: IoCType) -> dict | None:
     }
 
 # ── URLhaus ──────────────────────────────────────────────────────────────────
-
 async def _urlhaus(value: str, ioc_type: IoCType) -> dict | None:
     if not settings.URLHAUS_ENABLED:
         return None
@@ -223,7 +222,6 @@ async def _urlhaus(value: str, ioc_type: IoCType) -> dict | None:
             return None
 
 # ── Shodan ───────────────────────────────────────────────────────────────────
-
 async def _shodan(value: str, ioc_type: IoCType) -> dict | None:
     if not settings.SHODAN_API_KEY or ioc_type != IoCType.IP:
         return None
@@ -263,50 +261,54 @@ async def _shodan(value: str, ioc_type: IoCType) -> dict | None:
             return None
 
 # ── Risk score calculator ────────────────────────────────────────────────────
+def compute_risk(vt, abuse, otx, urlhaus, ioc_type: IoCType) -> tuple[float, Severity, bool | None]:
 
-def compute_risk(vt, abuse, otx, urlhaus) -> tuple[float, Severity, bool | None]:
-    scores = []
+    BASE_WEIGHTS = {
+        "vt": 0.35,
+        "abuse": 0.25,
+        "otx": 0.20,
+        "urlhaus": 0.20
+    }
+    RELEVANCE_MASK = {
+        "vt": True,
+        "otx": True,
+        "abuse": ioc_type == IoCType.IP,
+        "urlhaus": ioc_type in (IoCType.URL, IoCType.DOMAIN, IoCType.IP, IoCType.HASH_MD5, IoCType.HASH_SHA256)
+    }
 
-    # 1. Приводимо кожен сервіс до простої шкали 0-100
-    if vt:
-        # 5+ детекцій — це 100% загрози
-        vt_score = min((vt.get("malicious", 0) * 20) + (vt.get("suspicious", 0) * 10), 100)
-        scores.append(vt_score)
+    raw_scores = {}
+    
+    if RELEVANCE_MASK["vt"] and vt:
+        raw_scores["vt"] = min((vt.get("malicious", 0) * 20) + (vt.get("suspicious", 0) * 10), 100)
+    if RELEVANCE_MASK["abuse"] and abuse:
+        raw_scores["abuse"] = abuse.get("abuse_score", 0)
+    if RELEVANCE_MASK["otx"] and otx:
+        raw_scores["otx"] = min(otx.get("pulse_count", 0) * 10, 100)
+    if RELEVANCE_MASK["urlhaus"] and urlhaus and urlhaus.get("found"):
+        raw_scores["urlhaus"] = 100 if urlhaus.get("urls_online", 0) > 0 else 40
 
-    if abuse:
-        # Передаємо чистий скоринг AbuseIPDB (він уже від 0 до 100)
-        scores.append(abuse.get("abuse_score", 0))
-
-    if otx:
-        # 10 пульсів — це 100% загрози
-        otx_score = min(otx.get("pulse_count", 0) * 10, 100)
-        scores.append(otx_score)
-
-    if urlhaus and urlhaus.get("found"):
-        # Якщо посилання онлайн — 100%, якщо мертве — 40%
-        uh_score = 100 if urlhaus.get("urls_online", 0) > 0 else 40
-        scores.append(uh_score)
-
-    # Якщо взагалі жодне джерело не повернуло результат
-    if not scores:
+    if not raw_scores:
+        return 0.0, Severity.UNKNOWN, None
+    
+    active_weights_sum = sum(BASE_WEIGHTS[source] for source, is_relevant in RELEVANCE_MASK.items() if is_relevant)
+    
+    if active_weights_sum == 0:
         return 0.0, Severity.UNKNOWN, None
 
-    # 2. Брати максимум — це суть "Найгіршого сценарію" (Worst-case scenario)
-    base_score = max(scores)
+    weighted_sum = 0.0
+    for source, is_relevant in RELEVANCE_MASK.items():
+        if is_relevant:
+            score = raw_scores.get(source, 0)
+            weighted_sum += score * BASE_WEIGHTS[source]
 
-    # 3. Вагове згладжування (Бонус за консенсус джерел)
-    # Якщо загрозу підтверджують КІЛЬКА джерел одночасно, ми трохи піднімаємо бал
-    malicious_sources_count = sum(1 for s in scores if s >= 35)
-    
+    base_score = weighted_sum / active_weights_sum
+    malicious_sources_count = sum(1 for s in raw_scores.values() if s >= 35)
     if malicious_sources_count > 1 and base_score < 100:
-        # Додаємо по 5 балів за кожне додаткове джерело, що підтвердило загрозу
         base_score = min(base_score + (malicious_sources_count - 1) * 5, 100)
 
-    # Округлення під інженерний стандарт
     final_score = round(base_score, 1)
     is_malicious = final_score >= 35.0
 
-    # Стандартний мапінг категорій критичності
     if final_score >= 75:    sev = Severity.CRITICAL
     elif final_score >= 50:  sev = Severity.HIGH
     elif final_score >= 35:  sev = Severity.MEDIUM
@@ -335,7 +337,7 @@ async def enrich(value: str, ioc_type: IoCType) -> dict:
     def safe(x): return x if isinstance(x, dict) else None
 
     vt, abuse, otx, uh, shodan = map(safe, [vt, abuse, otx, uh, shodan])
-    risk, sev, mal = compute_risk(vt, abuse, otx, uh)
+    risk, sev, mal = compute_risk(vt, abuse, otx, uh, ioc_type)
 
     country = (
         (abuse or {}).get("country_code")
