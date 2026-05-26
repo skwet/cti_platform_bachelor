@@ -21,7 +21,6 @@ class FeedStatus(str, enum.Enum):
 def now_utc():
     return datetime.now(timezone.utc)
 
-
 class ThreatFeed(Base):
     __tablename__ = "threat_feeds"
 
@@ -39,7 +38,6 @@ class ThreatFeed(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 class FeedEntry(Base):
-    """Individual IoC record collected from a feed (denormalized for speed)."""
     __tablename__ = "feed_entries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

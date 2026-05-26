@@ -12,7 +12,6 @@ class Settings(BaseSettings):
     ABUSEIPDB_API_KEY: str = ""
     ALIENVAULT_API_KEY: str = ""
     SHODAN_API_KEY: str = ""
-    IPINFO_TOKEN: str = ""
     URLHAUS_API_KEY: str = ""
     URLHAUS_ENABLED: bool = True
 
