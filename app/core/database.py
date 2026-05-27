@@ -34,19 +34,15 @@ async def get_db():
 
 
 async def init_db():
-    # Import models so SQLAlchemy registers them with Base
-    from app.models import ioc, feed  # noqa
-
-    # Retry up to 10 times with 2s delay — handles race condition
-    # where backend starts slightly before Postgres is fully ready
+    from app.models import ioc, feed
     for attempt in range(1, 11):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            log.info("Database initialized successfully")
+            log.info("БД успішно ініціалізована")
             return
         except Exception as e:
             if attempt == 10:
                 raise
-            log.warning("DB not ready (attempt %d/10): %s — retrying in 2s…", attempt, e)
+            log.warning("БД НЕ ГОТОВА")
             await asyncio.sleep(2)

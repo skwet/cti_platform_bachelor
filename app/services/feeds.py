@@ -7,7 +7,6 @@ import io
 import logging
 from datetime import datetime, timezone
 
-import feedparser
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,8 +153,8 @@ async def _collect_malwarebazaar(url: str, limit: int = 150) -> list[dict]:
     }
 
     headers = {}
-    if settings.URLHAUS_API_KEY:
-        headers["Auth-Key"] = settings.URLHAUS_API_KEY
+    if settings.ABUSECH_API_KEY:
+        headers["Auth-Key"] = settings.ABUSECH_API_KEY
 
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(url, data=payload, headers=headers)

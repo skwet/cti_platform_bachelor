@@ -154,9 +154,6 @@ async def _otx(value: str, ioc_type: IoCType) -> dict | None:
     general    = result.get("general", {})
     pulse_info = general.get("pulse_info", {})
     pulses     = pulse_info.get("pulses", [])
-
-    # Витягуємо повний список пульсів (перші 20, щоб не перевантажувати)
-    # і збираємо MITRE TTPs
     mitre_ttps = _extract_mitre_ttps(pulses[:20])
 
     return {
@@ -184,12 +181,12 @@ async def _otx(value: str, ioc_type: IoCType) -> dict | None:
 async def _urlhaus(value: str, ioc_type: IoCType) -> dict | None:
     if not settings.URLHAUS_ENABLED:
         return None
-    if not settings.URLHAUS_API_KEY:
+    if not settings.ABUSECH_API_KEY:
         return None
     if ioc_type not in (IoCType.URL, IoCType.DOMAIN, IoCType.IP, IoCType.HASH_MD5, IoCType.HASH_SHA256):
         return None
     base = "https://urlhaus-api.abuse.ch/v1"
-    headers = {"Auth-Key": settings.URLHAUS_API_KEY}
+    headers = {"Auth-Key": settings.ABUSECH_API_KEY}
     async with httpx.AsyncClient(timeout=15) as c:
         try:
             if ioc_type == IoCType.URL:
@@ -265,8 +262,8 @@ def compute_risk(vt, abuse, otx, urlhaus, ioc_type: IoCType) -> tuple[float, Sev
 
     BASE_WEIGHTS = {
         "vt": 0.35,
-        "abuse": 0.25,
-        "otx": 0.20,
+        "otx": 0.25,
+        "abuse": 0.20,
         "urlhaus": 0.20
     }
     RELEVANCE_MASK = {
